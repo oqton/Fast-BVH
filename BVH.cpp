@@ -1,9 +1,10 @@
 #include <algorithm>
-#include <omp.h>
 #include <iostream>
 #include "BVH.h"
 #include "Log.h"
 #include "Stopwatch.h"
+#include <thread>
+#include <future>
 
 namespace pelfrey {
 //! Node for storing state information during traversal.
@@ -48,23 +49,38 @@ bool pelfrey::BVH::getIntersection(const Ray& ray, IntersectionInfo* intersectio
     // Is leaf -> Intersect
     if( node.rightOffset == 0 ) {
       volatile bool flag=false;
-      #pragma omp parallel for shared(flag)
-      for(uint32_t o=0;o<node.nPrims;++o) {
-        if(flag) continue; // skip in parallel for if one occlusion is enough
-        IntersectionInfo current;
 
-        const Object* obj = (*build_prims)[node.start+o];
-        bool hit = obj->getIntersection(ray, &current);
+      {
+        size_t nCpus = std::thread::hardware_concurrency();
+        size_t primsPerCpu = node.nPrims / nCpus;
 
-        if (hit) {
-          // If we're only looking for occlusion, then any hit is good enough
-          if(occlusion) {
-            flag = true;
-          }
+        std::vector<std::future<void>> tasks;
+        for (size_t cpu = 0; cpu < nCpus; ++cpu) {
+          size_t bottom = primsPerCpu * cpu;
+          size_t top = top == nCpus - 1? node.nPrims : primsPerCpu * (cpu + 1);
 
-          // Otherwise, keep the closest intersection only
-          if (current.t < intersection->t) {
-            *intersection = current;
+          for(size_t o=bottom;o < top; ++o) {
+           std::async(std::launch::async,
+             [this, &flag, &node, &ray, occlusion, intersection, o]() {
+               if(flag) return; // skip in parallel for if one occlusion is enough
+               IntersectionInfo current;
+
+               const Object* obj = (*build_prims)[node.start+o];
+               bool hit = obj->getIntersection(ray, &current);
+
+               if (hit) {
+                 // If we're only looking for occlusion, then any hit is good enough
+                 if(occlusion) {
+                   flag = true;
+                 }
+
+                 // Otherwise, keep the closest intersection only
+                 if (current.t < intersection->t) {
+                   //FIXME: I don't think this is thread safe
+                   *intersection = current;
+                 }
+               }
+                      });
           }
         }
       }
