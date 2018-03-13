@@ -55,13 +55,18 @@ bool pelfrey::BVH::getIntersection(const Ray& ray, IntersectionInfo* intersectio
         size_t primsPerCpu = node.nPrims / nCpus;
 
         std::vector<std::future<void>> tasks;
+        std::vector<IntersectionInfo*> intersections_thread;
         for (size_t cpu = 0; cpu < nCpus; ++cpu) {
           size_t bottom = primsPerCpu * cpu;
           size_t top = top == nCpus - 1? node.nPrims : primsPerCpu * (cpu + 1);
+          IntersectionInfo *I_thread = new IntersectionInfo();
+          I_thread->t = 999999999.f;
+          I_thread->object = NULL;
+          intersections_thread.push_back(I_thread);
 
           for(size_t o=bottom;o < top; ++o) {
            std::async(std::launch::async,
-             [this, &flag, &node, &ray, occlusion, intersection, o]() {
+             [this, &flag, &node, &ray, occlusion, I_thread, o]() {
                if(flag) return; // skip in parallel for if one occlusion is enough
                IntersectionInfo current;
 
@@ -75,14 +80,23 @@ bool pelfrey::BVH::getIntersection(const Ray& ray, IntersectionInfo* intersectio
                  }
 
                  // Otherwise, keep the closest intersection only
-                 if (current.t < intersection->t) {
+                 if (current.t < I_thread->t) {
                    //FIXME: I don't think this is thread safe
-                   *intersection = current;
+                   *I_thread = current;
                  }
                }
                       });
           }
+
         }
+        for (size_t cpu = 0; cpu < nCpus; ++cpu) {
+            if(intersections_thread[cpu]->t < intersection->t) {
+              *intersection = *intersections_thread[cpu];
+            }
+            delete intersections_thread[cpu];
+          }
+
+
       }
       if(flag) return true;
     } else { // Not a leaf
