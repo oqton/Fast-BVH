@@ -3,7 +3,7 @@
 
 #include <cstdio>
 
-#define LOG_LEVEL 100
+#define LOG_LEVEL 2
 
 #if LOG_LEVEL > 2
  #define LOG_INFO(...) { printf("[Info] " __VA_ARGS__); printf("\n"); }
