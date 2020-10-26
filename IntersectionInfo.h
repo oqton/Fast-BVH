@@ -2,7 +2,7 @@
 #define IntersectionInfo_h_
 
 namespace pelfrey {
-class Object;
+struct Object;
 
 struct IntersectionInfo {
   float t; // Intersection distance along the ray
